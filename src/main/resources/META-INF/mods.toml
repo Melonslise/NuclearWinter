@@ -1,0 +1,17 @@
+modLoader="javafml"
+loaderVersion="[38,)"
+license="All rights reserved"
+#issueTrackerURL="https://change.me.to.your.issue.tracker.example.invalid/"
+
+[[mods]]
+modId="nwinter"
+version="1.0"
+displayName="Nuclear Winter"
+# updateJSONURL="https://change.me.example.invalid/updates.json"
+# displayURL="https://change.me.to.your.mods.homepage.example.invalid/"
+# logoFile="examplemod.png"
+credits="Thanks for this example mod goes to Java"
+authors="Love, Cheese and small house plants"
+description='''
+bruh
+'''

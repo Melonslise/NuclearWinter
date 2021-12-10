@@ -1,0 +1,13 @@
+{
+	"required": true,
+	"package": "melonslise.nwinter.mixin",
+	"compatibilityLevel": "JAVA_17",
+	"refmap": "nwinter.refmap.json",
+	"client": [
+		"client.CompiledChunkMixin",
+		"client.EffectInstanceMixin",
+		"client.LevelRendererMixin",
+		"client.RebuildTaskMixin"
+	],
+	"minVersion": "0.8.5"
+}
