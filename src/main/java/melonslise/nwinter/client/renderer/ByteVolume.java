@@ -2,7 +2,6 @@ package melonslise.nwinter.client.renderer;
 
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.platform.TextureUtil;
-import io.netty.buffer.ByteBuf;
 import melonslise.nwinter.client.util.GLHelper;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.Resource;
@@ -153,6 +152,12 @@ public class ByteVolume implements AutoCloseable
 	{
 		this.bind();
 		GL12.glTexSubImage3D(GL12.GL_TEXTURE_3D, 0, x, y, z, width, height, depth, this.pixelFormat.glFormat, GL11.GL_UNSIGNED_BYTE, pixelBuffer);
+	}
+
+	public void upload(int x, int y, int z, int width, int height, int depth, long ptr)
+	{
+		this.bind();
+		GL12.glTexSubImage3D(GL12.GL_TEXTURE_3D, 0, x, y, z, width, height, depth, this.pixelFormat.glFormat, GL11.GL_UNSIGNED_BYTE, ptr);
 	}
 
 	@Override

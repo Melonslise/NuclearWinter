@@ -3,13 +3,14 @@
 uniform sampler2D DiffuseSampler;
 uniform sampler2D DiffuseDepthSampler;
 uniform sampler3D NoiseVolume;
-uniform sampler3D SkylightVolume;
+uniform isampler2D HeightmapTexture;
 
 uniform mat4 ProjInverseMat;
 uniform mat4 ViewInverseMat;
 
 uniform vec3 CameraPosition;
 uniform float GameTime;
+uniform ivec2 HeightmapCorner;
 
 in vec2 texCoord;
 
@@ -108,6 +109,27 @@ float fbm(vec3 m, int octaves, float amplitude)
 }
 */
 
+float noise(vec3 p)
+{
+	return texture(NoiseVolume, p).r * 2.0 - 1.0;
+}
+
+int height(vec3 p)
+{
+	return texelFetch(HeightmapTexture, ivec2(floor(p.xz - HeightmapCorner)), 0).r;
+}
+
+float heightAboveGround(vec3 p)
+{
+	return p.y - height(p);
+}
+
+float remap(float v, float minOld, float maxOld, float minNew, float maxNew)
+{
+	return minNew + (v - minOld) * (maxNew - minNew) / (maxOld - minOld);
+}
+
+/*
 float marchFog(vec3 ro, vec3 rd, float maxDist, float stepSize, vec3 driftDir, float time)
 {
 	float fog = 0.0;
@@ -116,13 +138,38 @@ float marchFog(vec3 ro, vec3 rd, float maxDist, float stepSize, vec3 driftDir, f
 	int maxSteps = 128;
 	// stepSize = maxDist / maxSteps;
 
-	for(int i = 0; i < maxSteps; ++i)
-	{
-		vec3 p = ro + rd * dist;
+	int coveredBlocks = 0;
 
-		if(dist > maxDist || p.y - ro.y > 8.0)
+	for(int i = 0; i < maxSteps + 1; ++i)
+	{
+		vec3 p = ro + rd * min(dist, maxDist);
+
+		int h = height(p);
+		float heightAboveGround = p.y - h;
+
+		float densityMul = 1.0;
+
+		if(heightAboveGround <= 0)
 		{
-			break;
+			if(i == 0)
+			{
+				coveredBlocks = 3;
+			}
+			else
+			{
+				++coveredBlocks;
+			}
+			densityMul = max(0.0, remap(float(coveredBlocks), 0.0, 7.0, 1.0, 0.0));
+		}
+		else
+		{
+			coveredBlocks = 0;
+			densityMul = max(0.0, remap(heightAboveGround, 0.0, 9.0, 1.0, 0.0));
+
+			if(heightAboveGround > 8.0)
+			{
+				break;
+			}
 		}
 
 		vec3 sp = p;
@@ -131,13 +178,117 @@ float marchFog(vec3 ro, vec3 rd, float maxDist, float stepSize, vec3 driftDir, f
 
 		// float n = texCoord.x > 0.5 ? (texture(NoiseVolume, sp).r * 2.0 - 1.0) * 0.5 : fbm(sp * 8.0, 5, 0.5);
 
-		float n = (texture(NoiseVolume, sp).r * 2.0 - 1.0) * 0.5;
-		fog += max(0.0, n) / clamp(dist, 8.0, 64.0) * 2.0;
+		float n = noise(sp) * 0.5;
+		float an = max(0.0, n) / clamp(dist, 8.0, 64.0) * 2.0;
+		fog += an * densityMul;
+
+		if(dist >= maxDist)
+		{
+			break;
+		}
 
 		dist += stepSize;
 	}
 
 	return min(fog, 1.0);
+}
+*/
+
+float marchFog2(vec3 ro, vec3 rd, float maxDist, float stepSize, vec3 driftDir, float time)
+{
+	float fog = 0.0;
+	float densityMul = step(0.0, heightAboveGround(ro));
+
+	int maxSteps = int(clamp(maxDist, 0.0, 64.0) * 4.0);
+	stepSize = 0.25;
+
+	// int coveredBlocks = 3;
+
+	for(int i = 0; i < maxSteps + 1; ++i)
+	{
+		float dist = i * stepSize;
+
+		//vec3 po = ro + rd * ((i - 1) * stepSize);
+		vec3 p = ro + rd * dist;
+
+		float hg = heightAboveGround(p);
+
+		densityMul = clamp(remap(hg, 8.0, 10.0, 1.0, 0.0), 0.0, 1.0);
+		densityMul = step(0.0, hg) * densityMul;
+		// densityMul *= hg <= 0.0 ? 0.95 : 1.0;
+
+		/*
+		if(hg <= 0.0)
+		{
+			if(i != 0 && floor(po) != floor(p))
+			{
+				++coveredBlocks;
+			}
+			// coveredBlocks += int(step(i, 0.0)) * 2 + 1; // +3 if first iteration (i == 0) else +1
+			densityMul = max(0.0, remap(coveredBlocks, 0.0, 9.0, 1.0, 0.0));
+			densityMul *= 0.95;
+		}
+		else
+		{
+			// densityMul = step(h, 8.0);
+			// coveredBlocks = 0;
+			if(hg > 8.0)
+			{
+				int xph = height(p + vec3(1.0, 0.0, 0.0));
+				int xnh = height(p + vec3(-1.0, 0.0, 0.0));
+				int zph = height(p + vec3(0.0, 0.0, 1.0));
+				int znh = height(p + vec3(0.0, 0.0, -1.0));
+
+				vec3 buv = fract(p);
+
+				if(xph > h)
+				{
+					densityMul = buv.x;
+				}
+				else if(xnh > h)
+				{
+					densityMul = 1.0 - buv.x;
+				}
+				else if(zph > h)
+				{
+					densityMul = buv.z;
+				}
+				else if(znh > h)
+				{
+					densityMul = 1.0 - buv.z;
+				}
+
+				float maxHg = max(h, max(xph, max(xnh, max(zph, znh)))) - h + 8;
+				float hgCutoff = maxHg + 2.0;
+
+				densityMul *= clamp(remap(hg, maxHg, hgCutoff, 1.0, 0.0), 0.0, 1.0);
+			}
+			else
+			{
+				densityMul = 1.0;
+			}
+		}
+		*/
+
+		if(densityMul <= 0.0)
+		{
+			continue;
+		}
+
+		vec3 sp = p;
+		sp -= driftDir * time;
+		sp /= 64.0;
+
+		// float n = texCoord.x > 0.5 ? (texture(NoiseVolume, sp).r * 2.0 - 1.0) * 0.5 : fbm(sp * 8.0, 5, 0.5);
+
+		float n = noise(sp) * 0.5;
+		float an = max(0.0, n) / pow(clamp(dist, 4.0, 64.0), 0.7) * stepSize;
+		fog += an * densityMul;
+
+		dist += stepSize;
+	}
+
+	return fog; // min(fog, 1.0);
 }
 
 void main()
@@ -149,11 +300,10 @@ void main()
 	float dstToSurface = length(posPS);
 
 	vec3 windDir = normalize(vec3(-2.0, 1.0, 2.0));
-	float fog = marchFog(CameraPosition, normalize(posPS), dstToSurface, 1.0, windDir, GameTime * 24000.0);
+	float fog = marchFog2(CameraPosition, normalize(posPS), dstToSurface, 1.0, windDir, 0.0) * 1.2; // GameTime * 24000.0
 	fragColor = vec4(mix(color, vec3(1.0, 1.0, 1.0), fog), 1.0);
 
-	float r = texture(SkylightVolume, vec3(texCoord.x, 0.0, texCoord.y)).r; // mod(int(GameTime * 1200), 3) / 3.0
-	fragColor = vec4(r, r, r, 1.0);
+	// fragColor = vec4(vec3(texture(HeightmapTexture, texCoord).r / 320.0), 1.0);
 
 	/*
 	float r = fbm(vec3(texCoord, mod(int(GameTime * 24000), 64) / 64.0) * 8.0, 4, 0.5) * 0.5 + 0.5;

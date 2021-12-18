@@ -9,11 +9,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 @OnlyIn(Dist.CLIENT)
-public abstract class ReloadableRegistry<T extends AutoCloseable> implements ResourceManagerReloadListener
+public abstract class ReloadableResourceRegistry<T extends AutoCloseable> implements ResourceManagerReloadListener
 {
 	protected final List<T> elements;
 
-	protected ReloadableRegistry(int expectedSize)
+	protected ReloadableResourceRegistry(int expectedSize)
 	{
 		this.elements = new ArrayList<>(expectedSize);
 	}

@@ -3,24 +3,21 @@ package melonslise.nwinter.client.event;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.math.Matrix4f;
 import melonslise.nwinter.NuclearWinter;
-import melonslise.nwinter.client.extension.IExtendedCompiledChunk;
 import melonslise.nwinter.client.init.NWShaders;
 import melonslise.nwinter.client.init.NWTextures;
-import melonslise.nwinter.client.renderer.ByteVolume;
 import melonslise.nwinter.client.renderer.shader.ExtendedPostChain;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.RenderLevelLastEvent;
+import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import org.lwjgl.BufferUtils;
-import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
-
-import java.nio.ByteBuffer;
+import org.lwjgl.system.MemoryUtil;
 
 @Mod.EventBusSubscriber(modid = NuclearWinter.ID, value = Dist.CLIENT)
 public final class NWRenderingHandler
@@ -28,11 +25,21 @@ public final class NWRenderingHandler
 	private static final Matrix4f PROJECTION_INVERSE = new Matrix4f();
 	private static final Matrix4f VIEW_INVERSE = new Matrix4f();
 
+	private static int cornerX, cornerZ;
+
+	/*
 	private static void updateSkylightVolume()
 	{
-		var chunks = Minecraft.getInstance().levelRenderer.renderChunksInFrustum;
+		Minecraft mc = Minecraft.getInstance();
 
-		if(chunks.size() <= 0)
+		if (mc.isPaused())
+		{
+			return;
+		}
+
+		var chunks = mc.levelRenderer.renderChunksInFrustum;
+
+		if (chunks.size() <= 0)
 		{
 			return;
 		}
@@ -52,27 +59,24 @@ public final class NWRenderingHandler
 			int x = pos.getX();
 			int y = pos.getY();
 			int z = pos.getZ();
-			if(x > maxX)
+			if (x > maxX)
 			{
 				maxX = x;
-			}
-			else if(x < minX)
+			} else if (x < minX)
 			{
 				minX = x;
 			}
-			if(y > maxY)
+			if (y > maxY)
 			{
 				maxY = y;
-			}
-			else if(y < minY)
+			} else if (y < minY)
 			{
 				minY = y;
 			}
-			if(z > maxZ)
+			if (z > maxZ)
 			{
 				maxZ = z;
-			}
-			else if(z < minZ)
+			} else if (z < minZ)
 			{
 				minZ = z;
 			}
@@ -82,31 +86,126 @@ public final class NWRenderingHandler
 		maxY += 16;
 		maxZ += 16;
 
+		int deltaX = maxX - minX;
+		int deltaY = (maxY - minY) / 4;
+		int deltaZ = maxZ - minZ;
+
 		// divide by 4 because we shrink 8 bits of skylight (0-15) into just 2 bits (0-3) so we can fit in 4 blocks per single pixel
 		ByteVolume volume = NWTextures.INSTANCE.skylightVolume;
-		volume.set(ByteVolume.Format.RED, maxX - minX, (maxY - minY) / 4, maxZ - minZ, GL11.GL_NEAREST, GL12.GL_CLAMP_TO_EDGE);
+		volume.set(ByteVolume.Format.RED, deltaX, deltaY, deltaZ, GL11.GL_NEAREST, GL12.GL_CLAMP_TO_EDGE);
 
-		ByteBuffer buf = BufferUtils.createByteBuffer(volume.getWidth() * volume.getHeight() * volume.getDepth());
-		volume.upload(0, 0, 0, volume.getWidth(), volume.getHeight(), volume.getDepth(), buf);
+		// long ptr = MemoryUtil.nmemAlloc(deltaX * deltaY * deltaZ);
+		ByteBuffer buf = BufferUtils.createByteBuffer(deltaX * deltaY * deltaZ);
 
-		/*
 		for (LevelRenderer.RenderChunkInfo chunk : chunks)
 		{
-			ByteBuffer buf = ((IExtendedCompiledChunk) chunk.chunk.compiled.get()).getSkylightBuffer();
+			long skyPtr = ((IExtendedCompiledChunk) chunk.chunk.compiled.get()).getSkylightBuffer();
 
 			pos = chunk.chunk.getOrigin();
 			int xOff = pos.getX() - minX;
 			int yOff = (pos.getY() - minY) / 4;
 			int zOff = pos.getZ() - minZ;
 
-			buf.rewind();
+			int ptrOff = xOff + yOff * deltaX + zOff * deltaX * deltaY;
 
-			volume.upload(xOff, yOff, zOff, 16, 4, 16, buf);
+			for(int z = 0; z < 16; ++z)
+			{
+				for (int y = 0; y < 4; ++y)
+				{
+					int skyPtrOff = y * 16 + z * 16 * 4;
+
+					// MemoryUtil.memCopy(skyPtr + skyPtrOff, ptr + ptrOff, 16);
+				}
+			}
 		}
-		 */
+
+		volume.upload(0, 0, 0, volume.getWidth(), volume.getHeight(), volume.getDepth(), buf);
+		// MemoryUtil.nmemFree(ptr);
+
+		for (LevelRenderer.RenderChunkInfo chunk : chunks)
+		{
+			pos = chunk.chunk.getOrigin();
+			int xOff = pos.getX() - minX;
+			int yOff = (pos.getY() - minY) / 4;
+			int zOff = pos.getZ() - minZ;
+
+			volume.upload(xOff, yOff, zOff, 16, 4, 16, ((IExtendedCompiledChunk) chunk.chunk.compiled.get()).getSkylightBuffer());
+		}
+	}
+	 */
+
+	public static void updateHeightmapTexture()
+	{
+		Minecraft mc = Minecraft.getInstance();
+
+		if (mc.isPaused())
+		{
+			return;
+		}
+
+		var chunks = mc.levelRenderer.renderChunksInFrustum;
+
+		if (chunks.size() <= 0)
+		{
+			return;
+		}
+
+		BlockPos pos = chunks.get(0).chunk.getOrigin();
+
+		int minX = pos.getX();
+		int minZ = pos.getZ();
+		int maxX = minX;
+		int maxZ = minZ;
+
+		for (LevelRenderer.RenderChunkInfo chunk : chunks)
+		{
+			pos = chunk.chunk.getOrigin();
+			int x = pos.getX();
+			int z = pos.getZ();
+			if (x > maxX)
+			{
+				maxX = x;
+			}
+			else if (x < minX)
+			{
+				minX = x;
+			}
+			if (z > maxZ)
+			{
+				maxZ = z;
+			}
+			else if (z < minZ)
+			{
+				minZ = z;
+			}
+		}
+
+		maxX += 16;
+		maxZ += 16;
+
+		int deltaX = maxX - minX;
+		int deltaZ = maxZ - minZ;
+
+		long ptr = MemoryUtil.nmemAlloc(deltaX * deltaZ * 2); // 2 bytes per short
+
+		for(int z = 0; z < deltaZ; ++z)
+		{
+			for(int x = 0; x < deltaX; ++x)
+			{
+				// ptr offset * 2 because short = 2 bytes
+				MemoryUtil.memPutShort(ptr + (x + z * deltaX) * 2, (short) mc.level.getHeight(Heightmap.Types.MOTION_BLOCKING, minX + x, minZ + z));
+			}
+		}
+
+		NWTextures.INSTANCE.heightmapTexture.set(deltaX, deltaZ, GL12.GL_CLAMP_TO_EDGE);
+		NWTextures.INSTANCE.heightmapTexture.upload(0, 0, deltaX, deltaZ, ptr);
+
+		MemoryUtil.nmemFree(ptr);
+
+		cornerX = minX;
+		cornerZ = minZ;
 	}
 
-	/*
 	@SubscribeEvent
 	public static void clientTickEnd(TickEvent.ClientTickEvent e)
 	{
@@ -115,15 +214,12 @@ public final class NWRenderingHandler
 			return;
 		}
 
-		updateSkylightVolume();
+		updateHeightmapTexture();
 	}
-	*/
 
 	@SubscribeEvent
 	public static void renderLevel(RenderLevelLastEvent e)
 	{
-		updateSkylightVolume();
-
 		PROJECTION_INVERSE.load(RenderSystem.getProjectionMatrix()); // FIXME e.getProjectionMatrix???
 		PROJECTION_INVERSE.invert();
 
@@ -145,8 +241,9 @@ public final class NWRenderingHandler
 			effect.safeGetUniform("ViewInverseMat").set(VIEW_INVERSE);
 			effect.safeGetUniform("CameraPosition").set((float) camPos.x, (float) camPos.y, (float) camPos.z);
 			effect.safeGetUniform("GameTime").set(RenderSystem.getShaderGameTime());
+			effect.safeGetUniform("HeightmapCorner").set(cornerX, cornerZ);
 			effect.setSampler("NoiseVolume", () -> NWTextures.INSTANCE.noiseVolume.getId());
-			effect.setSampler("SkylightVolume", () -> NWTextures.INSTANCE.skylightVolume.getId());
+			effect.setSampler("HeightmapTexture", () -> NWTextures.INSTANCE.heightmapTexture.getId());
 		});
 
 		postChain.process(e.getPartialTick());
